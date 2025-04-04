@@ -1,0 +1,8 @@
+*.pyc
+depth-diff-gaussian-rasterization
+simple-knn
+__pycache__/
+wandb
+res
+BackgroundMattingV2
+LLFF
