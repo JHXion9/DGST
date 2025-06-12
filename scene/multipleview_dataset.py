@@ -42,16 +42,16 @@ class multipleview_dataset(Dataset):
             R = np.transpose(qvec2rotmat(extr.qvec))
             T = np.array(extr.tvec)
 
-            number = os.path.basename(extr.name)[5:-4]
+            number = os.path.basename(extr.name).split(".")[0]
             images_folder=os.path.join(cam_folder,"cam"+number.zfill(2))
-           
+
             image_range=range(image_length)
             # 修改过的部分---------5--- k
             if split=="test" and number == '9':
                 # 原来：image_range = [image_range[0],image_range[int(image_length/3)],image_range[int(image_length*2/3)]]
                 for i in image_range:    
                     num1=i+1
-                    image_path=os.path.join(images_folder,"frame_"+str(num1).zfill(5)+".jpg")
+                    image_path=os.path.join(images_folder,"frame_"+str(num1).zfill(5)+".png")
                     image_paths.append(image_path)
                     image_poses.append((R,T))
                     image_times.append(float(i/image_length))
@@ -60,7 +60,7 @@ class multipleview_dataset(Dataset):
             if split!="test" :
                 for i in image_range:    
                     num=i+1
-                    image_path=os.path.join(images_folder,"frame_"+str(num).zfill(5)+".jpg")
+                    image_path=os.path.join(images_folder,"frame_"+str(num).zfill(5)+".png")
                     image_paths.append(image_path)
                     image_poses.append((R,T))
                     image_times.append(float(i/image_length))

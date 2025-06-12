@@ -230,41 +230,6 @@ def render_set_online(args, model_path, name, iteration, views, gaussians, pipel
     print("Done rendering!")
     return Point_clouds 
 
-def calculate_metrics(args,model_path, measure_PC):
-    GT_dir = f"/media/DGST_data/trajectory/{args.ID}-{args.GT_name}"
-    with open(os.path.join(GT_dir,'_xyz.json'), 'r') as file:
-        GT = json.load(file)
-    GT = np.array(GT)
-
-    tree = cKDTree(measure_PC[0])
-    distance, indices = tree.query(GT[0])
-    print("GT值",GT[0])
-    print("临近点",measure_PC[indices[0]])
-    print("indices",indices)
-
-    EPE = calculate_3d_mte(GT, np.array(measure_PC[indices]))
-    print("EPE: ", EPE)
-    
-    e5, e10 = calculate_accuracy_within_thresholds(GT, np.array(measure_PC[indices]))
-    print("e5, e10: ", e5, e10)
-
-    survival = calculate_survival_rate(GT, np.array(measure_PC[indices]), 150)
-    print("Survival: ", survival)
-
-    
-    
-    with open(os.path.join(model_path,"results.json"), 'r') as file:
-        data = json.load(file)
-    data['ours_30000']['EPE'] = EPE
-    data['ours_30000']['e5'] = e5
-    data['ours_30000']['e10'] = e10
-    data['ours_30000']['Survival'] = survival
-
-    with open(os.path.join(model_path,"results.json"), 'w') as file:
-        json.dump(data, file, indent=4)
-    
-    create_3d_animation(smooth_tracks(GT),smooth_tracks(np.array(measure_PC)), model_path,'GT-pred_trajectory.gif')
-
 def render_sets(args, dataset : ModelParams, hyperparam, pipeline : PipelineParams):
     iteration = args.iteration
     with torch.no_grad():
@@ -282,7 +247,7 @@ def render_sets(args, dataset : ModelParams, hyperparam, pipeline : PipelinePara
 
         Point_cloud = render_set_online(args, dataset.model_path, "test", scene.loaded_iter, scene.getTestCameras(), gaussians, pipeline, background,cam_type)
         
-        calculate_metrics(args,dataset.model_path, Point_cloud)
+        # calculate_metrics(args,dataset.model_path, Point_cloud)
 
 if __name__ == "__main__":
     # Set up command line argument parser

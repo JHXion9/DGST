@@ -32,7 +32,7 @@ from scene.colmap_loader import read_extrinsics_text, read_intrinsics_text, qvec
 from tool.utils import multithread_write, get_k_w2c, smooth_tracks
 import json
 from scipy.spatial import cKDTree
-from tool.eval import calculate_3d_mte, calculate_accuracy_within_thresholds, calculate_survival_rate
+from tool.eval import calculate_3d_epe, calculate_accuracy_within_thresholds, calculate_survival_rate
 from tool.vis import create_3d_animation
     
 to8b = lambda x : (255*np.clip(x.cpu().numpy(),0,1)).astype(np.uint8)
@@ -106,29 +106,33 @@ def point_tracking(visual_path, images, point_clouds, w2c, k):
     imageio.mimwrite(os.path.join(visual_path,"video_circle.mp4"), circle_image, fps=30)
 
 def calculate_metrics(args,model_path, measure_PC):
-    GT_dir = f"/media/DGST_data/trajectory/{args.ID}-{args.GT_name}"
+    GT_dir = f"/media/DGST_data/trajectory/{args.ID}"
     with open(os.path.join(GT_dir,'_xyz.json'), 'r') as file:
         GT = json.load(file)
     GT = np.array(GT)
     measure_PC = np.array(measure_PC)
    
     tree = cKDTree(measure_PC[0])
-    distance, indices = tree.query(GT[0])
-    print("GT值",GT[0])
-    print("临近点",measure_PC[0,indices[0]])
+    distance, indices = tree.query(GT[:,0,:])
+    print("GT值",GT[:,1,:])
+    print("临近点",measure_PC[1][indices])
     print("indices",indices)
+
+    pred = measure_PC[:, indices]
+    pred = pred.transpose(1, 0, 2)  # 转置为 (N, T, 3) 的形状
     
-    EPE = calculate_3d_mte(GT, np.array(measure_PC[:,indices]))
+    EPE = calculate_3d_epe(GT, np.array(pred))
     print("EPE: ", EPE)
     
-    e5, e10 = calculate_accuracy_within_thresholds(GT, np.array(measure_PC[:,indices]))
+    e5, e10 = calculate_accuracy_within_thresholds(GT, np.array(pred))
     print("e5, e10: ", e5, e10)
 
-    survival = calculate_survival_rate(GT, np.array(measure_PC[:,indices]), 150)
+    survival = calculate_survival_rate(GT, np.array(pred), 150)
     print("Survival: ", survival)
 
     data = {}
     data['ours_30000'] = {
+    'num_points': measure_PC[0].shape[0],
     'EPE': EPE,
     'e5': e5,
     'e10': e10,
@@ -138,7 +142,7 @@ def calculate_metrics(args,model_path, measure_PC):
     with open(os.path.join(model_path,"results.json"), 'w') as file:
         json.dump(data, file, indent=4)
     
-    create_3d_animation(smooth_tracks(GT),smooth_tracks(measure_PC[:,indices]), model_path,'GT-pred_trajectory.gif')
+    # create_3d_animation(smooth_tracks(GT),smooth_tracks(pred), model_path,'GT-pred_trajectory.gif')
 
 def render_set(model_path, name, iteration, views, gaussians, pipeline, background, cam_type,w2c,k):
     render_path = os.path.join(model_path, name, "ours_{}".format(iteration), "renders")
@@ -173,9 +177,6 @@ def render_set(model_path, name, iteration, views, gaussians, pipeline, backgrou
         #print("sampled_points:",sampled_points.shape)
         Point_clouds.append(xyz_np)
         
-        # pcd = o3d.geometry.PointCloud()
-        # pcd.points = o3d.utility.Vector3dVector(xyz_np)
-        # o3d.io.write_point_cloud("./output/multipleview/face/sync.ply", pcd)
 
         #-----------------
         # if idx ==0:break
@@ -197,18 +198,18 @@ def render_set(model_path, name, iteration, views, gaussians, pipeline, backgrou
     print("FPS:",(len(views)-1)/(time2-time1))
     print("writing training images.")
 
-    # multithread_write(gt_list, gts_path)
-    # print("writing rendering images.")
+    multithread_write(gt_list, gts_path)
+    print("writing rendering images.")
 
-    # multithread_write(render_list, render_path)
+    multithread_write(render_list, render_path)
     # 读取renders文件夹下的图片，将其保存为images
-    # images = []
-    # for i in range(len(render_list)):
-    #     image = cv2.imread(os.path.join(render_path, '{0:05d}'.format(i) + ".png"))
-    #     images.append((i, image))
+    images = []
+    for i in range(len(render_list)):
+        image = cv2.imread(os.path.join(render_path, '{0:05d}'.format(i) + ".png"))
+        images.append((i, image))
     
-    # visual_path = os.path.join(model_path, name, "ours_{}".format(iteration))
-    # point_tracking(visual_path, images, Point_clouds, w2c, k)
+    visual_path = os.path.join(model_path, name, "ours_{}".format(iteration))
+    point_tracking(visual_path, images, Point_clouds, w2c, k)
     print("DONE!!!!")
     imageio.mimwrite(os.path.join(model_path, name, "ours_{}".format(iteration), 'video_rgb.mp4'), render_images, fps=30)
     return Point_clouds
@@ -248,7 +249,6 @@ if __name__ == "__main__":
     pipeline = PipelineParams(parser)
     hyperparam = ModelHiddenParams(parser)
     parser.add_argument("--ID", default=0, type=str)
-    parser.add_argument("--GT_name", default=0, type=str)
     parser.add_argument("--iteration", default=-1, type=int)
     parser.add_argument("--skip_train", action="store_true")
     parser.add_argument("--skip_test", action="store_true")

@@ -1,7 +1,7 @@
 ID=$1
 
 
-python preprocess.py --id $ID --id-name EMO-1-shout+laugh --site eyes
+python preprocess.py --id $ID --id-name EMO-2-surprise+fear
 
 
 

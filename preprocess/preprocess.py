@@ -249,13 +249,13 @@ if __name__ == "__main__":
 
     parser.add_argument('--id', type=str, required=True)
     parser.add_argument('--id-name', type=str, required=True)
-    parser.add_argument('--site', type=str, required=True)
+    # parser.add_argument('--site', type=str, required=True)
 
     args = parser.parse_args()
 
     seq = args.id
     seq_name = args.id_name 
-    site = args.site  # 需要跟踪的位置
+    # site = args.site  # 需要跟踪的位置
     time = 150
     
 
@@ -264,7 +264,7 @@ if __name__ == "__main__":
     face_seg_output_dir = f'/media/DGST_data/Data/{seq}/segmentation/cam'
     background_dir = f'/media/Nersemble/BACKGROUND/{seq}/BACKGROUND'
     background_output_dir = f'/media/DGST_data/Data/{seq}/BACKGROUND'
-    video_dir = f'/media/DGST_data/raw_data/{site}/{seq}/{seq_name}/'
+    video_dir = f'/media/DGST_data/raw_data/{seq}/{seq_name}/'
     
     
     getfromvideo(seq, video_dir, time)

@@ -8,7 +8,7 @@
 #
 # For inquiries contact  george.drettakis@inria.fr
 #
-import wandb
+
 import numpy as np
 import random
 import os, sys
@@ -94,7 +94,7 @@ def scene_reconstruction(
     test_cams = scene.getTestCameras()
     train_cams = scene.getTrainCameras()
 
-    if not viewpoint_stack and not opt.dataloader:
+    if not viewpoint_stack and not opt.dataloader: # 粗阶段没进来，精细阶段不知道
         # dnerf's branch
         viewpoint_stack = [i for i in train_cams]
         temp_list = copy.deepcopy(viewpoint_stack)
@@ -104,7 +104,10 @@ def scene_reconstruction(
     # 使用数据加载器
     if opt.dataloader:
         # 获取训练相机
-        viewpoint_stack = scene.getTrainCameras()
+        if stage == "coarse":
+            viewpoint_stack = scene.getTrainCameras_T0()
+        else:
+            viewpoint_stack = scene.getTrainCameras()
  
         if opt.custom_sampler is not None:
             sampler = FineSampler(viewpoint_stack)
@@ -117,9 +120,10 @@ def scene_reconstruction(
             )
             random_loader = False
         else:
+            # 粗阶段进了这里
             viewpoint_stack_loader = DataLoader(
                 viewpoint_stack,
-                batch_size=batch_size,
+                batch_size=batch_size ,
                 shuffle=True,
                 num_workers=16,
                 collate_fn=list,
@@ -128,13 +132,25 @@ def scene_reconstruction(
         # 将数据加载器转换为迭代器
         loader = iter(viewpoint_stack_loader)
 
+
+ 
+    # for i, batch in enumerate(viewpoint_stack):
+    #     print(batch[0].time)
+    #     print(batch[1].time)
+    #     print(batch[2].time)  
+    #     print(len(batch))   
+    #     assert 0
+
     # dynerf, zerostamp_init
     # breakpoint()
+    # 用于粗阶段的初始化 ，只有dynerf需要
     if stage == "coarse" and opt.zerostamp_init:
         load_in_memory = True
         # batch_size = 4
         temp_list = get_stamp_list(viewpoint_stack, 0)
+
         viewpoint_stack = temp_list.copy()
+
     else:
         load_in_memory = False
         #
@@ -206,7 +222,11 @@ def scene_reconstruction(
         if opt.dataloader and not load_in_memory:
             try:
                 # 从数据加载器中获取视点相机
-                viewpoint_cams = next(loader)
+                if stage == 'fine':
+                    viewpoint_cams = next(loader)[0]
+                    # print(len(viewpoint_cams))
+                else:
+                    viewpoint_cams = next(loader)
             except StopIteration:
                 print("reset dataloader into random dataloader.")
                 if not random_loader:
@@ -219,11 +239,11 @@ def scene_reconstruction(
                     )
                     random_loader = True
                 loader = iter(viewpoint_stack_loader)
-
         else:
+            if stage == "fine":
+                print("asdasdasdasdas dasd阿萨大大萨达萨达")
             idx = 0
             viewpoint_cams = []
-
             while idx < batch_size:
 
                 viewpoint_cam = viewpoint_stack.pop(
@@ -245,6 +265,9 @@ def scene_reconstruction(
         visibility_filter_list = []
         viewspace_point_tensor_list = []
         rot_list = []
+
+        all_mean_3D_deform = []
+
         for viewpoint_cam in viewpoint_cams:
             render_pkg = render(
                 viewpoint_cam,
@@ -254,8 +277,9 @@ def scene_reconstruction(
                 stage=stage,
                 cam_type=scene.dataset_type,
             )
-            image, viewspace_point_tensor, visibility_filter, radii, rot = (
+            image, p3ds, viewspace_point_tensor, visibility_filter, radii, rot = (
                 render_pkg["render"],
+                render_pkg["means3D"],
                 render_pkg["viewspace_points"],
                 render_pkg["visibility_filter"],
                 render_pkg["radii"],
@@ -272,9 +296,13 @@ def scene_reconstruction(
             visibility_filter_list.append(visibility_filter.unsqueeze(0))
             viewspace_point_tensor_list.append(viewspace_point_tensor)
             rot_list.append(rot)
+
+            all_mean_3D_deform.append(p3ds[None,:,:])
         # print("rot",len(rot_list))
         # print("rot_list.shpe", rot_list[0].shape)
         # print("***********", gt_images[0].shape)
+
+        all_mean_3D_deform = torch.cat(all_mean_3D_deform, dim=0)
         # assert 0
         # 计算各个视点的最大半径
         radii = torch.cat(radii_list, 0).max(dim=0).values
@@ -286,11 +314,24 @@ def scene_reconstruction(
         # Loss 计算损失
         # breakpoint()
         Ll1 = l1_loss(image_tensor, gt_image_tensor[:, :3, :, :])
+        
 
         psnr_ = psnr(image_tensor, gt_image_tensor).mean().double()
         # norm
         
         loss = Ll1
+
+        n_cams = len(viewpoint_cams)
+        l_momentum = None
+        
+
+
+        # if n_cams>=3 :
+        #     ## MOMENTUM LOSS
+        #     l_momentum = all_mean_3D_deform[2,:,:] - 2*all_mean_3D_deform[1,:,:] + all_mean_3D_deform[0,:,:]
+        #     l_momentum = 10000*torch.linalg.norm(l_momentum, dim=-1, ord=1).mean() # mean l1 norm
+        
+        #     loss+= l_momentum
 
         # 如果阶段是“fine” 且时间平滑权重不为0
         if stage == "fine" and hyper.time_smoothness_weight != 0: #0.01
@@ -341,6 +382,7 @@ def scene_reconstruction(
                         "Loss": f"{ema_loss_for_log:.{7}f}",
                         "psnr": f"{psnr_:.{2}f}",
                         "point": f"{total_point}",
+                        "l_momentum": f"{l_momentum:.{2}f}" if l_momentum is not None else "N/A",
                     }
                 )
                 progress_bar.update(10)
@@ -516,6 +558,7 @@ def training(
     timer = Timer()
     scene = Scene(dataset, gaussians, load_coarse=None)
     timer.start()
+
     scene_reconstruction(
         dataset,
         opt,
@@ -612,7 +655,7 @@ def training_report(
             {
                 "name": "train",
                 "cameras": [
-                    scene.getTrainCameras()[idx % len(scene.getTrainCameras())]
+                    scene.getTrainCameras_T0()[idx % len(scene.getTrainCameras_T0())]
                     for idx in range(10, 5000, 299)
                 ],
             },
@@ -721,10 +764,11 @@ def setup_seed(seed):
 
 
 if __name__ == "__main__":
+    
     # Set up command line argument parser
     # torch.set_default_tensor_type('torch.FloatTensor')
     # 清空CUDA上下文中的缓存
-    torch.cuda.empty_cache()
+    # torch.cuda.empty_cache()
     parser = ArgumentParser(description="Training script parameters")
     setup_seed(6666)
     lp = ModelParams(parser)
@@ -773,17 +817,6 @@ if __name__ == "__main__":
     network_gui.init(args.ip, args.port)
     torch.autograd.set_detect_anomaly(args.detect_anomaly)
 
-    # wandb.init(
-    # # set the wandb project where this run will be logged
-    # project="my-awesome-project",
-
-    # # track hyperparameters and run metadata
-    # config={
-    # "architecture": "4DGS",
-    # "dataset": "NERSEMBLE",
-    # "epochs": 10000,
-    # }
-    # )
 
     training(
         lp.extract(args),

@@ -15,7 +15,7 @@ import json
 from utils.system_utils import searchForMaxIteration
 from scene.dataset_readers import sceneLoadTypeCallbacks
 from scene.gaussian_model import GaussianModel
-from scene.dataset import FourDGSdataset
+from scene.dataset import FourDGSdataset, FourDGSdataset_window
 from arguments import ModelParams
 from utils.camera_utils import cameraList_from_camInfos, camera_to_JSON
 from torch.utils.data import Dataset
@@ -68,7 +68,8 @@ class Scene:
         self.dataset_type = dataset_type
         self.cameras_extent = scene_info.nerf_normalization["radius"]
         print("Loading Training Cameras")
-        self.train_camera = FourDGSdataset(scene_info.train_cameras, args, dataset_type)
+        self.train_camera = FourDGSdataset_window(scene_info.train_cameras, args, dataset_type)
+        self.train_camera_T0 = FourDGSdataset(scene_info.train_cameras, args, dataset_type)
         print("Loading Test Cameras")
         self.test_camera = FourDGSdataset(scene_info.test_cameras, args, dataset_type)
         print("Loading Video Cameras")
@@ -107,6 +108,9 @@ class Scene:
         self.gaussians.save_deformation(point_cloud_path)
     def getTrainCameras(self, scale=1.0):
         return self.train_camera
+
+    def getTrainCameras_T0(self, scale=1.0):
+        return self.train_camera_T0
 
     def getTestCameras(self, scale=1.0):
         return self.test_camera
