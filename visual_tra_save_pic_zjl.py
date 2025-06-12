@@ -39,7 +39,7 @@ def get_k_w2c(datadir, cam_id):
     cameras_intrinsic_file = os.path.join(datadir, "sparse_/cameras.bin")
     cam_extrinsics = read_extrinsics_binary(cameras_extrinsic_file)
     cam_intrinsics = read_intrinsics_binary(cameras_intrinsic_file)
-    value = f'image{cam_id}.jpg'
+    value = f'{cam_id}.png'
     for idx, key in enumerate(cam_extrinsics):
         if cam_extrinsics[key].name == value:
             extr_id = key
