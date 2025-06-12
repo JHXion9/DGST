@@ -22,8 +22,8 @@ def create_3d_animation(gt_tracks, pred_tracks, output_dir, filename='trajectory
     output_dir (str): 输出动画文件的目录。
     filename (str): 输出动画文件的名称，默认为 'trajectory_animation.gif'。
     """
-    gt_tracks = gt_tracks * 30
-    pred_tracks = pred_tracks * 30
+    gt_tracks = gt_tracks * 13
+    pred_tracks = pred_tracks * 13
     # 创建画布和轴
     fig = plt.figure()
     ax = fig.add_subplot(111, projection='3d')
