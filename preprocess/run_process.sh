@@ -33,7 +33,8 @@ python inference_images.py \
 --output-type pha \
 --images-src /media/DGST_data/Data/$ID/img \
 --images-bgr /media/DGST_data/Data/$ID/BACKGROUND/ \
---output-dir /media/DGST_data/Data/$ID/matting
+--output-dir /media/DGST_data/Data/$ID/matting \
+--model-checkpoint /media/DenseGSTracking/BackgroundMattingV2/assets/pytorch_resnet101.pth
 
 rm -rf /media/DGST_data/Data/$ID/img
 

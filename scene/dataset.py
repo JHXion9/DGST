@@ -47,6 +47,9 @@ class FourDGSdataset(Dataset):
 
 
 class FourDGSdataset_window(Dataset):
+    """
+    滑动窗口数据集，返回连续的 2 帧（t 和 t+1）用于轨迹损失计算。
+    """
     def __init__(
         self,
         dataset,
@@ -56,6 +59,7 @@ class FourDGSdataset_window(Dataset):
         self.dataset = dataset
         self.args = args
         self.dataset_type = dataset_type
+        self.window_size = 2  # 只需要 t 和 t+1
         
 
     def _process_single_item(self, original_index):
@@ -77,31 +81,24 @@ class FourDGSdataset_window(Dataset):
                       mask=mask)
 
     def __getitem__(self, index):
-        # 窗口长度为3，步长为1
-        # index 代表窗口的起始位置
+        # 窗口长度为2，步长为1
+        # index 代表窗口的起始位置，返回 [cam_t, cam_t+1]
         
-        # 确保当前窗口在有效范围内 (由 __len__ 已经保证，但作为防御性编程仍可保留)
-        if index + 2 >= len(self.dataset):
-            raise IndexError(f"Window starting at {index} goes out of bounds. Max index for a window is {len(self.dataset) - 3}.")
+        if index + 1 >= len(self.dataset):
+            raise IndexError(f"Window starting at {index} goes out of bounds.")
 
         window_of_cameras = []
-        for i in range(3):
-            # 获取并处理连续的三个数据点
+        for i in range(self.window_size):
             camera_obj = self._process_single_item(index + i)
             window_of_cameras.append(camera_obj)
         
         return window_of_cameras
 
     def __len__(self):
-        # 计算滑动窗口的数量
-        # 如果原始数据集长度为 N，窗口长度为 W，步长为 S，则窗口数量为 (N - W) / S + 1
-        # 这里 W=3, S=1，所以是 len(self.dataset) - 3 + 1 = len(self.dataset) - 2
-
+        # 窗口数量 = 原始长度 - 窗口大小 + 1
         original_length = len(self.dataset)
-        window_size = 3
-
-        if original_length < window_size:
-            # 如果数据集太短，不足以形成一个完整的窗口，则返回 0
+        
+        if original_length < self.window_size:
             return 0
         
-        return original_length - window_size + 1
+        return original_length - self.window_size + 1

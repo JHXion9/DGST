@@ -41,12 +41,12 @@ from tool.colormap import colormap
 import math
 from scipy.spatial import cKDTree
 from tool.utils import smooth_tracks, get_k_w2c, multithread_write
-# from tool.eval import calculate_3d_epe, calculate_accuracy_within_thresholds, calculate_survival_rate
+# from tool.eval import calculate_3d_mte, calculate_accuracy_within_thresholds, calculate_survival_rate
 from tool.vis import create_3d_animation, filter_points, make_lineset
 # 点云采样间隔
-traj_frac = 3
+traj_frac = 15
 # 轨迹长度
-traj_length = 15
+traj_length = 50
 near, far = 0.2, 1000
 view_scale = 1/4
 w, h = 2200, 3208
@@ -67,29 +67,20 @@ def init_camera(y_angle=-10, center_dist=1, cam_height=1.3, f_ratio=0.82):
     return w2c, k
 
 # 计算轨迹
-def calculate_all_trajectories(scene_data, data_dir, k, w2c, position):
+def calculate_all_trajectories(scene_data, data_dir, k, w2c):
     # 提取前景物体的三维坐标
     in_pts = [data['means3D'][::traj_frac].contiguous().float().cpu().numpy() for data in scene_data]
     
-    fin_pts = filter_points(in_pts,data_dir,k,w2c,position)
-    print("point nums:", len(fin_pts[0]))
-    # fin_pts = in_pts
+    # fin_pts = filter_points(in_pts,data_dir,k,w2c)
+    fin_pts = in_pts
     
     num_lines = len(fin_pts[0])
-    # 计算时间维度上的运动方向（轨迹方向）
-    temporal_directions = []
-    for i in range(len(fin_pts) - 1):
-        # 计算相邻帧之间相同点的位移
-        direction = fin_pts[i+1] - fin_pts[i]  # 形状: (N, 3)
-        temporal_directions.append(direction)
-    
-    # 为最后一帧添加相同的方向（保持长度一致）
-    if temporal_directions:
-        temporal_directions.append(temporal_directions[-1])
-    
-    
-    # 根据需要选择使用哪种方向
-    all_directions = temporal_directions  # 使用时间轨迹方向
+    # 计算移动方向
+    all_directions = []
+    for pts in fin_pts:
+        directions = np.diff(pts, axis=0)
+        directions = np.vstack((directions, directions[-1]))  # 保持与pts相同的长度
+        all_directions.append(directions)
    
     out_pts = []
     out_directions = []
@@ -129,7 +120,7 @@ def rgbd2pcd(im, depth, w2c, k, show_depth=False):
     cols = o3d.utility.Vector3dVector(cols.contiguous().double().cpu().numpy())
     return pts, cols
 
-def render_set_online(args, model_path, name, iteration, views, gaussians, pipeline, background, cam_type, position):
+def render_set_online(args, model_path, name, iteration, views, gaussians, pipeline, background, cam_type):
     id = args.ID
     render_path = os.path.join(model_path, name, "ours_{}".format(iteration), "renders")
     gts_path = os.path.join(model_path, name, "ours_{}".format(iteration), "gt")
@@ -142,16 +133,27 @@ def render_set_online(args, model_path, name, iteration, views, gaussians, pipel
     render_list = []
     Point_clouds = []  # 如果您不显示点云，可以移除此列表
     scene_data = []
+    
+    # 点云文件路径模式
+    
+    # 获取可用的点云文件
+    point_cloud_files = []
+    for t in range(1,151):
+        point_cloud_path = f"/media/DGST_data/Test_Data/{id}/EMO-1-shout+laugh/{t}/psiftproject/dense/0/fused.ply"
+        if os.path.exists(point_cloud_path):
+            point_cloud_files.append(point_cloud_path)
+
+        
+        print(f"Found {len(point_cloud_files)} point cloud files")
  
 
-    # print("point nums:", gaussians._xyz.shape[0])
+    print("point nums:", gaussians._xyz.shape[0])
 
     for idx, view in enumerate(tqdm(views, desc="Rendering progress")):
         Render = render(view, gaussians, pipeline, background, cam_type=cam_type)
         rendering = Render["render"]
         xyz = Render["means3D"]
         rendervar = Render["rendervar"]
-
 
         xyz_np = xyz.cpu().numpy()
         Point_clouds.append(xyz_np)  # 如果您不显示点云，可以移除此行
@@ -167,23 +169,42 @@ def render_set_online(args, model_path, name, iteration, views, gaussians, pipel
     cam_id = 9
     k, w2c = get_k_w2c(datadir, cam_id)
 
-    # print(k, w2c)
-    # assert 0
-
     # 初始化轨迹
-    linesets = calculate_all_trajectories(scene_data, datadir, k, w2c, position)
+    linesets = calculate_all_trajectories(scene_data, datadir, k, w2c)
     lines = o3d.geometry.LineSet()
     if linesets:
         lines.points = linesets[0].points
         lines.colors = linesets[0].colors
         lines.lines = linesets[0].lines
     vis.add_geometry(lines)
-
-    # (可选) 初始化点云
-    # pcd = o3d.geometry.PointCloud()
-    # if Point_clouds:  # 确保 Point_clouds 不为空
-    #     pcd.points = o3d.utility.Vector3dVector(Point_clouds[0])
-    #     vis.add_geometry(pcd)
+    
+    # 初始化点云（移除密度过滤）
+    pcd = o3d.geometry.PointCloud()
+    if point_cloud_files:
+        try:
+            first_pcd_path = point_cloud_files[0]
+            pcd = o3d.io.read_point_cloud(first_pcd_path)
+            if len(pcd.points) > 0:
+                # 如果点云没有颜色，设置默认颜色
+                if not pcd.has_colors():
+                    pcd.paint_uniform_color([0.7, 0.7, 0.7])  # 灰色
+                
+                vis.add_geometry(pcd)
+                print(f"Loaded initial point cloud: {first_pcd_path} (points: {len(pcd.points)})")
+            else:
+                print(f"Empty point cloud file: {first_pcd_path}")
+        except Exception as e:
+            print(f"Error loading point cloud {first_pcd_path}: {e}")
+    
+    # 设置渲染选项，包括点云透明度
+    render_options = vis.get_render_option()
+    render_options.point_size = 2.0
+    render_options.light_on = True
+    # 添加透明度设置
+    render_options.mesh_show_back_face = True
+    # 如果支持，设置点云透明度
+    if hasattr(render_options, 'point_color_option'):
+        render_options.point_color_option = o3d.visualization.PointColorOption.Color
 
     # 调整相机内参
     view_k = k * view_scale
@@ -197,11 +218,11 @@ def render_set_online(args, model_path, name, iteration, views, gaussians, pipel
     view_control.convert_from_pinhole_camera_parameters(cparams, allow_arbitrary=True)
 
     render_options = vis.get_render_option()
-    render_options.point_size = view_scale  # 如果您显示点云，设置点的大小
-    render_options.light_on = False
+    render_options.point_size = 2.0  # 设置点的大小
+    render_options.light_on = True   # 开启光照
 
     def update_and_capture(vis):
-        nonlocal frame_count, current_frame_idx, Point_clouds, linesets, lines #, pcd
+        nonlocal frame_count, current_frame_idx, Point_clouds, linesets, lines, pcd, point_cloud_files
         
         # 修改这里：一次前进多帧
         for _ in range(traj_length):  # 一次前进 traj_length 帧
@@ -210,11 +231,6 @@ def render_set_online(args, model_path, name, iteration, views, gaussians, pipel
                 print("Reached the end of the sequence.")
                 return False
                 
-            # (可选) 更新点云
-            # if Point_clouds:
-            #    pcd.points = o3d.utility.Vector3dVector(Point_clouds[current_frame_idx])
-            #    vis.update_geometry(pcd)
-
             # 更新轨迹
             lt = max(0, current_frame_idx - traj_length)
             if lt < len(linesets):
@@ -222,12 +238,38 @@ def render_set_online(args, model_path, name, iteration, views, gaussians, pipel
                 lines.colors = linesets[lt].colors
                 lines.lines = linesets[lt].lines
                 vis.update_geometry(lines)
+            
+            # 更新点云（移除密度过滤）
+            if point_cloud_files and current_frame_idx < len(point_cloud_files):
+                try:
+                    pcd_path = point_cloud_files[current_frame_idx]
+                    loaded_pcd = o3d.io.read_point_cloud(pcd_path)
+                    if len(loaded_pcd.points) > 0:
+                        # 直接更新点云，不进行密度过滤
+                        pcd.points = loaded_pcd.points
+                        
+                        # 保持原有颜色或设置默认颜色
+                        if loaded_pcd.has_colors():
+                            pcd.colors = loaded_pcd.colors
+                        else:
+                            pcd.paint_uniform_color([0.7, 0.7, 0.7])
+                        
+                        # 如果有法向量也更新
+                        if loaded_pcd.has_normals():
+                            pcd.normals = loaded_pcd.normals
+                        
+                        vis.update_geometry(pcd)
+                    else:
+                        # 如果点云为空，清空显示
+                        pcd.points = o3d.utility.Vector3dVector([])
+                        pcd.colors = o3d.utility.Vector3dVector([])
+                        vis.update_geometry(pcd)
+                except Exception as e:
+                    print(f"Error loading point cloud {point_cloud_files[current_frame_idx]}: {e}")
 
             vis.poll_events()
             vis.update_renderer()
 
-            
-                
             frame_count += 1
             current_frame_idx += 1
         # 捕获屏幕 (仅 2D 图像)
@@ -242,7 +284,7 @@ def render_set_online(args, model_path, name, iteration, views, gaussians, pipel
     print("Done rendering!")
     return Point_clouds 
 
-def render_sets(args, dataset : ModelParams, hyperparam, pipeline : PipelineParams, position):
+def render_sets(args, dataset : ModelParams, hyperparam, pipeline : PipelineParams):
     iteration = args.iteration
     with torch.no_grad():
         gaussians = GaussianModel(dataset.sh_degree, hyperparam)
@@ -257,7 +299,7 @@ def render_sets(args, dataset : ModelParams, hyperparam, pipeline : PipelinePara
         # print(gaussians.get_xyz.shape)
         # print(gaussians.compute_deformation(0))
 
-        Point_cloud = render_set_online(args, dataset.model_path, "test", scene.loaded_iter, scene.getTestCameras(), gaussians, pipeline, background,cam_type, position)
+        Point_cloud = render_set_online(args, dataset.model_path, "test", scene.loaded_iter, scene.getTestCameras(), gaussians, pipeline, background,cam_type)
         
         # calculate_metrics(args,dataset.model_path, Point_cloud)
 
@@ -268,7 +310,7 @@ if __name__ == "__main__":
     pipeline = PipelineParams(parser)
     hyperparam = ModelHiddenParams(parser)
     parser.add_argument("--ID", default=0, type=str)
-    parser.add_argument("--GT_name", default=0, type=str)
+    # parser.add_argument("--GT_name", default=0, type=str)
     parser.add_argument("--iteration", default=-1, type=int)
     parser.add_argument("--skip_train", action="store_true")
     parser.add_argument("--skip_test", action="store_true")
@@ -288,4 +330,4 @@ if __name__ == "__main__":
 
    
     #print("1")
-    render_sets(args, model.extract(args), hyperparam.extract(args), pipeline.extract(args), position="front")
+    render_sets(args, model.extract(args), hyperparam.extract(args), pipeline.extract(args))

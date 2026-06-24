@@ -105,55 +105,6 @@ def point_tracking(visual_path, images, point_clouds, w2c, k):
         cv2.imwrite(os.path.join(visual_path,"renders_pc",f"{idx}.png"), cv2.cvtColor(image,cv2.COLOR_BGR2RGB))
     imageio.mimwrite(os.path.join(visual_path,"video_circle.mp4"), circle_image, fps=30)
 
-def calculate_metrics(args,model_path, measure_PC):
-    GT_dir = f"/media/DGST_data/trajectory/{args.ID}"
-    with open(os.path.join(GT_dir,'_xyz.json'), 'r') as file:
-        GT = json.load(file)
-    GT = np.array(GT)
-    measure_PC = np.array(measure_PC)
-   
-    tree = cKDTree(measure_PC[0])
-    distance, indices = tree.query(GT[:,0,:])
-    print("GT值",GT[:,1,:])
-    print("临近点",measure_PC[1][indices])
-    print("indices",indices)
-
-    pred = measure_PC[:, indices]
-    pred = pred.transpose(1, 0, 2)  # 转置为 (N, T, 3) 的形状
-    
-    pore_num = 9
-
-    pore_EPE = calculate_3d_epe(GT[:pore_num], np.array(pred[:pore_num]))
-    landmarks_EPE = calculate_3d_epe(GT[pore_num:], np.array(pred[pore_num:]))
-    print("pore_EPE: ", pore_EPE)
-    print("landmarks_EPE: ", landmarks_EPE)
-
-    pore_e = calculate_accuracy_within_thresholds(GT[:pore_num], np.array(pred[:pore_num]))
-    landmarks_e = calculate_accuracy_within_thresholds(GT[pore_num:], np.array(pred[pore_num:]))
-    print("e5, e10: ", pore_e)
-    print("landmarks_e5, landmarks_e10: ", landmarks_e)
-
-    pore_survival = calculate_survival_rate(GT[:pore_num], np.array(pred[:pore_num]), 150)
-    landmarks_survival = calculate_survival_rate(GT[pore_num:], np.array(pred[pore_num:]), 150)
-
-    print("Survival: ", pore_survival)
-    print("landmarks_survival: ", landmarks_survival)
-
-    data = {}
-    data['ours_30000'] = {
-    'num_points': measure_PC[0].shape[0],
-    'pore_EPE': pore_EPE,
-    'landmarks_EPE': landmarks_EPE,
-    'pore_e': pore_e,
-    'landmarks_e': landmarks_e,
-    'pore_survival': pore_survival,
-    'landmarks_survival': landmarks_survival
-    }
-
-    with open(os.path.join(model_path,"results.json"), 'w') as file:
-        json.dump(data, file, indent=4)
-    
-    # create_3d_animation(smooth_tracks(GT),smooth_tracks(pred), model_path,'GT-pred_trajectory.gif')
 
 def render_set(model_path, name, iteration, views, gaussians, pipeline, background, cam_type,w2c,k):
     render_path = os.path.join(model_path, name, "ours_{}".format(iteration), "renders")
@@ -206,23 +157,19 @@ def render_set(model_path, name, iteration, views, gaussians, pipeline, backgrou
         
     time2=time()
     
-    # print("FPS:",(len(views)-1)/(time2-time1))
-    # print("writing training images.")
+    print("FPS:",(len(views)-1)/(time2-time1))
+    print("writing training images.")
 
-    # multithread_write(gt_list, gts_path)
-    # print("writing rendering images.")
-
-    # multithread_write(render_list, render_path)
-    # # 读取renders文件夹下的图片，将其保存为images
-    # images = []
-    # for i in range(len(render_list)):
-    #     image = cv2.imread(os.path.join(render_path, '{0:05d}'.format(i) + ".png"))
-    #     images.append((i, image))
+    multithread_write(render_list, render_path)
+    # 读取renders文件夹下的图片，将其保存为images
+    images = []
+    for i in range(len(render_list)):
+        image = cv2.imread(os.path.join(render_path, '{0:05d}'.format(i) + ".png"))
+        images.append((i, image))
     
-    # visual_path = os.path.join(model_path, name, "ours_{}".format(iteration))
-    # point_tracking(visual_path, images, Point_clouds, w2c, k)
-    # print("DONE!!!!")
-    # imageio.mimwrite(os.path.join(model_path, name, "ours_{}".format(iteration), 'video_rgb.mp4'), render_images, fps=30)
+    visual_path = os.path.join(model_path, name, "ours_{}".format(iteration))
+    point_tracking(visual_path, images, Point_clouds, w2c, k)
+
     return Point_clouds
 
 
@@ -250,7 +197,7 @@ def render_sets(dataset : ModelParams, hyperparam, iteration : int, pipeline : P
             
            
             Point_clouds = render_set(dataset.model_path, "test", scene.loaded_iter, scene.getTestCameras(), gaussians, pipeline, background,cam_type,w2c,k)
-            calculate_metrics(args,dataset.model_path, Point_clouds)
+
         if not skip_video:
             render_set(dataset.model_path,"video",scene.loaded_iter,scene.getVideoCameras(),gaussians,pipeline,background,cam_type)
 if __name__ == "__main__":

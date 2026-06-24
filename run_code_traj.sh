@@ -1,18 +1,18 @@
 #ID=$1 031 056 124
-Face=("124") # 定义场景ID数组
+Face=("031") # 定义场景ID数组
 # Face=("124" )
 
 # 遍历每个场景ID
 
 for SCENE in ${Face[@]};
 do
-CUDA_VISIBLE_DEVICES=1  python train.py -s "/media/DGST_data/Data/${SCENE}" --port 6022 --expname "out/${SCENE}" --configs arguments/multipleview/face.py
+# CUDA_VISIBLE_DEVICES=1 python train_trajloss.py -s "/media/DGST_data/Data/${SCENE}" --port 6022 --expname "out/${SCENE}_traj" --configs arguments/multipleview/face.py 
 
-CUDA_VISIBLE_DEVICES=1 python render.py --ID "${SCENE}" --source "/media/DGST_data/Data/${SCENE}" --model_path "/media/DGST_data/out/${SCENE}"  --skip_train --skip_video --configs arguments/multipleview/face.py  
+# CUDA_VISIBLE_DEVICES=1 python render.py --ID "${SCENE}" --source "/media/DGST_data/Data/${SCENE}" --model_path "/media/DGST_data/out/${SCENE}_traj"  --skip_train --skip_video --configs arguments/multipleview/face.py  
 
-CUDA_VISIBLE_DEVICES=1 python metrics.py --model_path "/media/DGST_data/out/${SCENE}"
+CUDA_VISIBLE_DEVICES=1 python metrics.py --model_path "/media/DGST_data/out/${SCENE}_traj"
 
-# CUDA_VISIBLE_DEVICES=1 python visual_newcolorcode.py --ID ${SCENE} --model_path /media/DGST_data/out/${SCENE}  --skip_train --skip_video --configs arguments/multipleview/face.py 
+# CUDA_VISIBLE_DEVICES=1 python visual_newcolorcode.py --ID ${SCENE} --model_path /media/DGST_data/out/${SCENE}_traj  --skip_train --skip_video --configs arguments/multipleview/face.py 
 
 done
 

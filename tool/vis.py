@@ -105,31 +105,28 @@ def create_3d_animation(gt_tracks, pred_tracks, output_dir, filename='trajectory
     output_path = os.path.join(output_dir, filename)
     ani.save(output_path, writer='pillow')
 
-direction_color_map = {
-    0: np.array([255, 0, 0]),     # 0-45 (红色)
-    1: np.array([255, 165, 0]),   # 45-90 (橙色)
-    2: np.array([255, 255, 0]),   # 90-135 (黄色)
-    3: np.array([0, 255, 0]),     # 135-180 (绿色)
-    4: np.array([0, 255, 255]),   # 180-225 (青色)
-    5: np.array([0, 0, 255]),     # 225-270 (蓝色)
-    6: np.array([128, 0, 128]),   # 270-315 (紫色)
-    7: np.array([255, 192, 203]), # 315-360 (粉色)
-    8: np.array([255, 255, 255])
-}
-
-def get_direction_key(direction):
+def direction_to_rgb(direction):
     """
-    将方向向量转换为查找表的键 (基于角度)
+    将方向向量转换为RGB颜色
+    使用您提供的xyz到RGB映射方法
     """
-    x, y = direction[:2]
-    if x == 0 and y == 0:
-      return 8
-    angle = math.atan2(y, x)
-    angle_deg = math.degrees(angle) % 360  # 转换为 0-360 度
+    # 规范化方向向量到单位向量
+    norm = np.linalg.norm(direction)
+    if norm == 0:
+        return np.array([0.5, 0.5, 0.5])  # 静止点使用灰色
+    
+    direction_unit = direction / norm
+    
+    # 将方向向量的xyz分量映射到RGB
+    # 将 [-1,1] 范围映射到 [0,1]
+    R = (direction_unit[0] + 1) / 2
+    G = (direction_unit[1] + 1) / 2
+    B = (direction_unit[2] + 1) / 2
+    
+    # 确保颜色值在[0,1]范围内
+    rgb = np.array([R, G, B])
+    return np.clip(rgb, 0, 1)
 
-    # 每 45 度一个区间
-    key = int(angle_deg / 45)
-    return key
 
 def make_lineset(all_pts, num_lines):
     linesets = []
@@ -148,7 +145,7 @@ def make_lineset(all_pts, num_lines):
         cols = []
         for start, end in line_indices:
             direction = pts[start] - pts[end]  # 使用线段的起点和终点计算方向
-            color = direction_color_map.get(get_direction_key(direction), [255, 255, 255]) / 255.0
+            color = direction_to_rgb(direction)
             cols.append(color)
 
         lineset.colors = o3d.utility.Vector3dVector(np.ascontiguousarray(cols, np.float64))
@@ -160,8 +157,8 @@ def make_lineset(all_pts, num_lines):
 
 
 
-def filter_points(pcd, data_dir, k, w2c):
-    first_mask_path = os.path.join(data_dir, 'mask/frame_00001.jpg')
+def filter_points(pcd, data_dir, k, w2c, position):
+    first_mask_path = os.path.join(data_dir, 'mask_{}.jpg'.format(position))
     first_mask = cv2.imread(first_mask_path, cv2.IMREAD_GRAYSCALE)
 
     # 检查图像是否成功读取
